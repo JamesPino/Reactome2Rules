@@ -1,0 +1,4 @@
+pygraphviz
+bioservices
+pandas
+networkx
