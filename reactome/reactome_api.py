@@ -38,11 +38,11 @@ class Reactome(REST):
         return self._get(q, 'string')
 
     def get_event_participants(self, event):
-        q = 'event/{}/participants'.format(event)
+        q = 'participants/{}/participants'.format(event)
         return self._get(q, 'json')
 
     def get_event_participating_phys_entities(self, event):
-        q = 'event/{}/participatingPhysicalEntities'.format(event)
+        q = 'participants/{}/participatingPhysicalEntities'.format(event)
         return self._get(q, 'json')
 
     def get_pathway(self, pathway_id):
@@ -127,17 +127,30 @@ def extract_list_from_key(keyword, y):
 
 
 def get_entity_info(species):
+    """
+    Gather information about species
 
-    x = _reactome.get_entity_info(species)
-    c_name = x['className']
+    Parameters
+    ----------
+    species : str
+
+    Returns
+    -------
+    information_dict : dict
+        Information about species
+
+    """
+
+    entity = _reactome.get_entity_info(species)
+    c_name = entity['className']
 
     if c_name == 'Reaction':
-        dn = x['displayName']
+        dn = entity['displayName']
         return {'displayName': dn,
                 'species_type': c_name}
 
-    if isinstance(x, int):
-        print(x)
+    if isinstance(entity, int):
+        print(entity)
         print("Here lies an error {}".format(species))
         return dict()
     info_needed = ['referenceType', 'className', 'startCoordinate',
@@ -153,11 +166,11 @@ def get_entity_info(species):
 
     entity_info = dict()
     entity_info['species_type'] = c_name
-    for n in x:
+    for n in entity:
         if n in info_needed:
-            entity_info[n] = x[n]
-    if 'referenceEntity' in x:
-        info = x['referenceEntity']
+            entity_info[n] = entity[n]
+    if 'referenceEntity' in entity:
+        info = entity['referenceEntity']
         if 'dbId' in info:
             entity_info['parent_dbid'] = info['dbId']
         if 'databaseName' in info:
@@ -165,8 +178,8 @@ def get_entity_info(species):
         if 'identifier' in info:
             entity_info['parent_identifier'] = info['identifier']
 
-    if 'hasModifiedResidue' in x:
-        info = x['hasModifiedResidue']
+    if 'hasModifiedResidue' in entity:
+        info = entity['hasModifiedResidue']
         mod_residues = []
         mods = []
         for r in info:
@@ -256,7 +269,7 @@ def _extract_info_from_reactants_or_products(r_dict, in_out):
     return return_info
 
 
-def get_reaction_info(reaction, graph):
+def get_reaction_info(reaction):
 
     if 'className' not in reaction:
         return None, None
@@ -318,22 +331,21 @@ def get_reaction_info(reaction, graph):
             if verbose:
                 for j in n:
                     print('\t\t {} : {}'.format(j, n[j]))
-        for n in test:
             if 'displayName' in n:
                 catalyst = n['dbId']
                 if verbose:
                     print(catalyst, 2)
                 cat_all.append(catalyst)
-                graph.add_node(catalyst,
-                               label=shorten_name(n['displayName']),
-                               shape='box', fillcolor='grey', style='filled')
+                # graph.add_node(catalyst,
+                #                label=shorten_name(n['displayName']),
+                #                shape='box', fillcolor='grey', style='filled')
 
     inputs = _extract_info_from_reactants_or_products(y, 'input')
     outputs = _extract_info_from_reactants_or_products(y, 'output')
 
     if verbose:
-        print('Inputs : {}'.format(inputs))
-        print('Outputs : {}'.format(outputs))
+        print('\tInputs : {}'.format(inputs))
+        print('\tOutputs : {}'.format(outputs))
 
     reaction_info = dict()
     reaction_info['inputs'] = inputs
@@ -349,7 +361,7 @@ def get_reaction_info(reaction, graph):
             print(cat_all)
         quit()
 
-    return reaction_info, rxn_name
+    return reaction_info
 
 
 def extract_pathways(pathway_events):
@@ -362,54 +374,29 @@ def extract_pathways(pathway_events):
     return pathways
 
 
-if __name__ == '__main__':
-    save_name = 'test_apoptosis'
+def generate_network(ref_id, save_name):
 
-    # get_entity_info(139907)
-    # get_entity_info(114269)
-    # d = get_entity_info(3700984)
-    # apoptosis = 109581
-    apoptosis = 111457
-    apoptosis = 114294
-    #
-    g = pyg.AGraph(directed=True)
-    # g.graph_attr['rankdir'] = 'LR'
-    g.graph_attr['splines'] = 'true'
-
-    x = _reactome.get_pathway_events(apoptosis)
-    reactions = []
-    all_info = []
-
-    # get events from pathway
-    # for each event
-    #   get reaction info = reactants, products
-    #
-
-    def extract_list_of_events(events):
-        for i in events:
-            info, rxn = get_reaction_info(i, g)
+    def extract_list_of_events(ref_id):
+        found_events = _reactome.get_pathway_events(ref_id)
+        for i in found_events:
+            print(i['displayName'], i['dbId'], i['className'])
+        # quit()
+        print("{} has {} events".format(save_name, len(found_events)))
+        print("Extracting events")
+        all_events = []
+        for i in found_events:
+            info = get_reaction_info(i)
             if info is None:
                 continue
-            all_info.append(info)
-            reactions.append(rxn)
-            # g.add_node(rxn_name, displayName=rxn_display_name,
-            #                label=rxn_display_name)
-            # create_graph(inputs, outputs, catalyst, rxn_name, graph, prev_events)
-            create_graph(reaction_info=info, graph=g)
+            all_events.append(info)
+        return all_events
 
+    events = extract_list_of_events(ref_id)
+    g = pyg.AGraph(directed=True)
+    g.graph_attr['splines'] = 'true'
 
-    x = _reactome.get_pathway_events(apoptosis)
-    print("{} has {} events".format(save_name, len(x)))
-    print("Extracting events")
-    extract_list_of_events(x)
-
-    #
-    # for each in all_info:
-    #     print(each)
-    #     for input in each['inputs']:
-    #         print(input)
-    #         print('Rule("{}"'.format()
-    # quit()
+    for e in events:
+        create_graph(reaction_info=e, graph=g)
 
     for i in g.nodes():
         node = g.get_node(i)
@@ -434,12 +421,11 @@ if __name__ == '__main__':
     gml_g = nx.nx_agraph.from_agraph(g)
     nx.write_gml(gml_g, '{}.gml'.format(save_name))
     print("Created GML file!")
-
     g.write('{}.dot'.format(save_name), )
     g.draw('{}.png'.format(save_name), prog='dot')
-    # df = pd.DataFrame(all_info)
+
+    # df = pd.DataFrame(events)
     # df.to_csv('reactome_df_{}.csv'.format(save_name))
-    # """
     # df = pd.read_csv('reactome_df.csv')
     # if 'compartment' in df.columns:
     #     translocations = df[df['compartment'].map(len) > 1]
@@ -447,3 +433,18 @@ if __name__ == '__main__':
     #         print("Translocations found")
     #         print(translocations)
     #         print(translocations.shape)
+
+
+if __name__ == '__main__':
+    save_name = 'test_apoptosis'
+
+    # large example
+    # generate_network(109581, 'all_apoptosis')
+
+    # generate_network(114294, 'bid_activates_bax')
+
+    # pathway 111457 shows an example of needing to include upstream events
+    # generate_network(111457, 'release_smac_cycs_from_mito')
+
+    # pathway 111453 shows an example of needing to use GeneSet for BH3 proteins
+    generate_network(111453, 'bcl2_interactions')
