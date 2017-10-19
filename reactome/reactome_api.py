@@ -53,6 +53,10 @@ class Reactome(REST):
         q = 'pathway/{}/containedEvents'.format(pathway_id)
         return self._get(q, 'json')
 
+    def get_schema(self, schema):
+        q = '/schema/{}?species=9606'.format(schema)
+
+        return self._get(q, 'json')
     def _get(self, q, fmt):
         return self.http_get(q, frmt=fmt)
 
@@ -92,24 +96,6 @@ def shorten_name(string):
         if s in string:
             string = string.replace(s, name_dict[s])
     return string
-
-
-def add_to_graph(sample, list_of_species, graph):
-    if type(sample) == int:
-        return
-    if sample['className'] not in shapes:
-        if verbose:
-            print('Is a {}'.format(sample['className']))
-        return
-    name = sample['dbId']
-    display = shorten_name(sample['displayName'])
-    graph.add_node(name,
-                   label=display,
-                   displayName=display,
-                   dbId=name,
-                   shape=shapes[sample['className']])
-
-    list_of_species[name] = display
 
 
 def extract_list_from_key(keyword, y):
@@ -210,6 +196,24 @@ def parse_entity():
     pass
 
 
+def add_to_graph(sample, list_of_species, graph):
+    if type(sample) == int:
+        return
+    if sample['className'] not in shapes:
+        if verbose:
+            print('Is a {}'.format(sample['className']))
+        return
+    name = sample['dbId']
+    display = shorten_name(sample['displayName'])
+    graph.add_node(name,
+                   label=display,
+                   displayName=display,
+                   dbId=name,
+                   shape=shapes[sample['className']])
+
+    list_of_species[name] = display
+
+
 def create_graph(reaction_info,  graph):
     inputs = reaction_info['inputs']
     outputs = reaction_info['outputs']
@@ -272,14 +276,14 @@ def _extract_info_from_reactants_or_products(r_dict, in_out):
 def get_reaction_info(reaction):
 
     if 'className' not in reaction:
-        return None, None
+        return None
 
     # ensure class is a reaction
     if reaction['className'] != 'Reaction':
         if verbose:
             print("Not a reaction")
             print(reaction)
-        return None, None
+        return None
 
     # get all reaction info
     rxn_name = reaction['dbId']
@@ -289,13 +293,13 @@ def get_reaction_info(reaction):
     if 'compartment' not in y:
         if verbose:
             print("No compartment")
-        return None, None
+        return None
 
     # check to make sure there is input and output
     if ('input' or 'output') not in y:
         if verbose:
             print("No input or output")
-        return None, None
+        return None
 
     # get reaction id and name
     rxn_display_name = reaction['displayName']
@@ -339,7 +343,6 @@ def get_reaction_info(reaction):
                 # graph.add_node(catalyst,
                 #                label=shorten_name(n['displayName']),
                 #                shape='box', fillcolor='grey', style='filled')
-
     inputs = _extract_info_from_reactants_or_products(y, 'input')
     outputs = _extract_info_from_reactants_or_products(y, 'output')
 
@@ -372,6 +375,41 @@ def extract_pathways(pathway_events):
         if i['className'] == 'Pathway':
             pathways.append(i['dbId'])
     return pathways
+
+
+def entity_info(entity_id):
+    entity_dict = _reactome.get_entity_info(entity_id)
+
+    for key, value in entity_dict.items():
+        print(key, value)
+
+    if 'schemaClass' in entity_dict:
+        if entity_dict['schemaClass'] == 'EntityWithAccessionedSequence':
+            reference = entity_dict['referenceEntity']
+            if 'geneName' in reference:
+                ref_gene_name = reference['geneName']
+                if len(ref_gene_name) != 1:
+                    print("More than one reference gene")
+                else:
+                    ref_gene_name = ref_gene_name[0]
+    if 'startCoordinate' in entity_dict:
+        start_aa = entity_dict['startCoordinate']
+    if 'endCoordinate' in entity_dict:
+        end_aa = entity_dict['endCoordinate']
+
+    if 'compartment' in entity_dict:
+        compartment = entity_dict['compartment']
+        if len(compartment) > 1:
+            print("More than one compartment for this species")
+            all_compartments = []
+            for c in compartment:
+                compartment_name = c['displayName']
+                all_compartments.append(compartment_name)
+        else:
+            compartment_name = compartment[0]['displayName']
+    print("Compartment: {}".format(compartment_name))
+    print("Reference gene: {}".format(ref_gene_name))
+    print("Protein AA range = {}-{}".format(start_aa, end_aa))
 
 
 def generate_network(ref_id, save_name):
@@ -435,9 +473,16 @@ def generate_network(ref_id, save_name):
     #         print(translocations.shape)
 
 
-if __name__ == '__main__':
-    save_name = 'test_apoptosis'
 
+
+if __name__ == '__main__':
+
+
+    # entity_info(400353)
+    # entity_info(114266)
+    # quit()
+    # get_reaction_info(_reactome.get_reaction_info(139920))
+    # quit()
     # large example
     # generate_network(109581, 'all_apoptosis')
 
@@ -448,3 +493,5 @@ if __name__ == '__main__':
 
     # pathway 111453 shows an example of needing to use GeneSet for BH3 proteins
     generate_network(111453, 'bcl2_interactions')
+    # generate_network(109606, 'intrinsic_apoptosis')
+    # generate_network(5358508, 'mismatch_repair')
