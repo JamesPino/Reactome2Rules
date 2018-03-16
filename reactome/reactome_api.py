@@ -340,9 +340,7 @@ def get_reaction_info(reaction):
                 if verbose:
                     print(catalyst, 2)
                 cat_all.append(catalyst)
-                # graph.add_node(catalyst,
-                #                label=shorten_name(n['displayName']),
-                #                shape='box', fillcolor='grey', style='filled')
+
     inputs = _extract_info_from_reactants_or_products(y, 'input')
     outputs = _extract_info_from_reactants_or_products(y, 'output')
 
@@ -434,7 +432,8 @@ def generate_network(ref_id, save_name):
     g.graph_attr['splines'] = 'true'
 
     for e in events:
-        create_graph(reaction_info=e, graph=g)
+        if isinstance(e, dict):
+            create_graph(reaction_info=e, graph=g)
 
     for i in g.nodes():
         node = g.get_node(i)
@@ -471,27 +470,3 @@ def generate_network(ref_id, save_name):
     #         print("Translocations found")
     #         print(translocations)
     #         print(translocations.shape)
-
-
-
-
-if __name__ == '__main__':
-
-
-    # entity_info(400353)
-    # entity_info(114266)
-    # quit()
-    # get_reaction_info(_reactome.get_reaction_info(139920))
-    # quit()
-    # large example
-    # generate_network(109581, 'all_apoptosis')
-
-    # generate_network(114294, 'bid_activates_bax')
-
-    # pathway 111457 shows an example of needing to include upstream events
-    # generate_network(111457, 'release_smac_cycs_from_mito')
-
-    # pathway 111453 shows an example of needing to use GeneSet for BH3 proteins
-    generate_network(111453, 'bcl2_interactions')
-    # generate_network(109606, 'intrinsic_apoptosis')
-    # generate_network(5358508, 'mismatch_repair')
