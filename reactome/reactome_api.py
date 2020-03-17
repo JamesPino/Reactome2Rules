@@ -1,4 +1,6 @@
 import textwrap
+from abc import ABC
+
 import networkx as nx
 import pandas as pd
 import pygraphviz as pyg
@@ -12,14 +14,14 @@ pd.set_option('display.max_columns', 5000)
 pd.options.display.max_colwidth = 5000
 
 
-class Reactome(REST):
+class Reactome(REST, ABC):
     _url = 'http://reactome.org/ContentService/data/'
 
     def __init__(self, cache=False):
         super(Reactome, self).__init__("Reactome(URL)", url=Reactome._url,
                                        verbose="ERROR", cache=cache)
         # http://reactome.org/ContentService/
-        self._content_url = 'http://reactome.org/ContentService/data/'
+        self._content_url = 'http://release.reactome.org/ContentService/data/'
 
     def get_reaction_info(self, reaction):
         q = 'query/{}'.format(reaction)
@@ -57,6 +59,7 @@ class Reactome(REST):
         q = '/schema/{}?species=9606'.format(schema)
 
         return self._get(q, 'json')
+
     def _get(self, q, fmt):
         return self.http_get(q, frmt=fmt)
 
@@ -214,6 +217,42 @@ def add_to_graph(sample, list_of_species, graph):
     list_of_species[name] = display
 
 
+def get_set_list(reactome_id):
+    components = []
+    for i in _reactome.get_entity_info(reactome_id)['hasMember']:
+        name = i['dbId']
+        label = i['displayName']
+        shape = shapes[i['className']]
+        components.append(
+            {
+                'name': name,
+                'displayName': label,
+                'label': label,
+                'shape': shape,
+                'dbId': name,
+            }
+        )
+    return components
+
+
+def get_complex_list(reactome_id):
+    components = []
+    for i in _reactome.get_entity_info(reactome_id)['hasComponent']:
+        name = i['dbId']
+        label = i['displayName']
+        shape = shapes[i['className']]
+        components.append(
+            {
+                'name': name,
+                'displayName': label,
+                'label': label,
+                'shape': shape,
+                'dbId': name,
+            }
+        )
+    return components
+
+
 def create_graph(reaction_info,  graph):
     inputs = reaction_info['inputs']
     outputs = reaction_info['outputs']
@@ -223,32 +262,43 @@ def create_graph(reaction_info,  graph):
 
     for name in inputs:
         current_input = inputs[name]
-        label = current_input['displayname']
-        shape = shapes[current_input['species_type']]
-        graph.add_node(name,
-                       label=label,
-                       displayName=label,
-                       dbId=name,
-                       shape=shape)
+        if current_input['species_type'] == 'Set':
+            for i in get_set_list(current_input['id']):
+                graph.add_node(i['name'], **i)
+                graph.add_edge(i['name'], rxn_name)
+        else:
+            label = current_input['displayname']
+            shape = shapes[current_input['species_type']]
+            graph.add_node(name,
+                           label=label,
+                           displayName=label,
+                           dbId=name,
+                           shape=shape)
+            graph.add_edge(name, rxn_name)
+            # for i in prev_events:
+            #     graph.add_edge(i, name)
         if catalyst:
             if name == catalyst:
                 pass
             else:
                 graph.add_edge(catalyst, rxn_name)
-        graph.add_edge(name, rxn_name)
-        # for i in prev_events:
-        #     graph.add_edge(i, name)
 
-    for each in outputs:
-        current_output = inputs[name]
-        label = current_output['displayname']
-        shape = shapes[current_output['species_type']]
-        graph.add_node(name,
-                       label=label,
-                       displayName=label,
-                       dbId=name,
-                       shape=shape)
-        graph.add_edge(rxn_name, each)
+    for name in outputs:
+        current_output = outputs[name]
+        print(current_output)
+        if current_output['species_type'] == 'Set':
+            for i in get_set_list(current_output['id']):
+                graph.add_node(i['name'], **i)
+                graph.add_edge(rxn_name, i['name'])
+        else:
+            label = current_output['displayname']
+            shape = shapes[current_output['species_type']]
+            graph.add_node(name,
+                           label=label,
+                           displayName=label,
+                           dbId=name,
+                           shape=shape)
+            graph.add_edge(rxn_name, name)
 
 
 def _extract_info_from_reactants_or_products(r_dict, in_out):
@@ -274,17 +324,6 @@ def _extract_info_from_reactants_or_products(r_dict, in_out):
 
 
 def get_reaction_info(reaction):
-
-    if 'className' not in reaction:
-        return None
-
-    # ensure class is a reaction
-    if reaction['className'] != 'Reaction':
-        if verbose:
-            print("Not a reaction")
-            print(reaction)
-        return None
-
     # get all reaction info
     rxn_name = reaction['dbId']
     y = _reactome.get_reaction_info(rxn_name)
@@ -350,6 +389,11 @@ def get_reaction_info(reaction):
         print('\tInputs : {}'.format(inputs))
         print('\tOutputs : {}'.format(outputs))
 
+    if len(cat_all) > 1:
+        if verbose:
+            print(cat_all)
+        quit()
+
     reaction_info = dict()
     reaction_info['inputs'] = inputs
     reaction_info['outputs'] = outputs
@@ -358,12 +402,6 @@ def get_reaction_info(reaction):
     reaction_info['compartment'] = compartments
     reaction_info['catalyst'] = catalyst
     reaction_info['prev_events'] = prev_events
-
-    if len(cat_all) > 1:
-        if verbose:
-            print(cat_all)
-        quit()
-
     return reaction_info
 
 
@@ -423,15 +461,20 @@ def generate_network(ref_id, save_name):
         print("Extracting events")
         all_events = []
         for i in found_events:
-            info = get_reaction_info(i)
-            if info is None:
+            if 'className' not in i:
                 continue
+            if i['className'] != 'Reaction':
+                continue
+            info = get_reaction_info(i)
+
             all_events.append(info)
         return all_events
 
     events = extract_list_of_events(ref_id)
-    g = pyg.AGraph(directed=True)
-    g.graph_attr['splines'] = 'true'
+
+    g = pyg.AGraph(directed=True, splines='true')
+    # g = pydot.Dot(directed=True)
+    # g = pydotplus.Dot(directed=True, splines='true')
 
     for e in events:
         create_graph(reaction_info=e, graph=g)
@@ -460,7 +503,7 @@ def generate_network(ref_id, save_name):
     nx.write_gml(gml_g, '{}.gml'.format(save_name))
     print("Created GML file!")
     g.write('{}.dot'.format(save_name), )
-    g.draw('{}.png'.format(save_name), prog='dot')
+    g.draw('{}.pdf'.format(save_name), prog='dot', format='pdf')
 
     # df = pd.DataFrame(events)
     # df.to_csv('reactome_df_{}.csv'.format(save_name))
@@ -471,27 +514,3 @@ def generate_network(ref_id, save_name):
     #         print("Translocations found")
     #         print(translocations)
     #         print(translocations.shape)
-
-
-
-
-if __name__ == '__main__':
-
-
-    # entity_info(400353)
-    # entity_info(114266)
-    # quit()
-    # get_reaction_info(_reactome.get_reaction_info(139920))
-    # quit()
-    # large example
-    # generate_network(109581, 'all_apoptosis')
-
-    # generate_network(114294, 'bid_activates_bax')
-
-    # pathway 111457 shows an example of needing to include upstream events
-    # generate_network(111457, 'release_smac_cycs_from_mito')
-
-    # pathway 111453 shows an example of needing to use GeneSet for BH3 proteins
-    generate_network(111453, 'bcl2_interactions')
-    # generate_network(109606, 'intrinsic_apoptosis')
-    # generate_network(5358508, 'mismatch_repair')
